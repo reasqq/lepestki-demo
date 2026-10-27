@@ -1,0 +1,1 @@
+{"name":"lepestki-local-demo","version":"1.0.0","private":true,"scripts":{"start":"node server.cjs","test":"node tests.cjs"},"description":"Локальный прототип на синтетических данных. Без зависимостей."}

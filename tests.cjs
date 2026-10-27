@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict');
+const {fresh,totals,add,normalize,applyBonus,checkout,place}=require('./model.js');
+let count=0;function test(name,fn){fn();count++;console.log('PASS '+name);}
+const form={name:'Алиса Тестовая',phone:'+7 000 000-00-00',email:'alisa@example.test',recipient:'self',address:'г. Примерск, ул. Тестовая, 1',date:'2026-10-28',slot:'14:00–16:00',consent:true};
+test('Пустая корзина: доставка и итог нулевые',()=>{assert.equal(totals(fresh()).total,0);assert.equal(totals(fresh()).shipping,0);});
+test('Объединение одинаковых вариантов и отдельная упаковка',()=>{const s=fresh();add(s,'p1');add(s,'p1');add(s,'p1',400);assert.equal(s.cart.length,2);assert.equal(totals(s).subtotal,18100);assert.equal(totals(s).count,3);});
+test('Защита количества и неизвестных вариантов',()=>{const s=fresh();for(let i=0;i<110;i++)add(s,'p2');add(s,'unknown');add(s,'p1',999);assert.equal(s.cart[0].qty,99);assert.equal(s.cart.length,1);});
+test('Курьер / самовывоз',()=>{const s=fresh();add(s,'p1');assert.equal(totals(s).total,6200);s.delivery='pickup';assert.equal(totals(s).total,5900);});
+test('Списание 500: итог и неизменный баланс до заказа',()=>{const s=fresh();add(s,'p1');assert.equal(applyBonus(s,'500'),'');assert.equal(totals(s).total,5700);assert.equal(s.bonus.balance,1250);});
+test('Ошибка списания: отрицательное, дробное, текст, ноль и сверх лимита',()=>{const s=fresh();add(s,'p1');for(const v of ['-1','1.5','abc','0','1001'])assert.ok(applyBonus(s,v));assert.equal(s.applied,0);});
+test('Курс и процент; лимит в целых бонусах',()=>{const s=fresh();add(s,'p2');s.bonus.rate=3;s.bonus.percent=25;assert.equal(totals(s).max,375);assert.equal(applyBonus(s,'375'),'');assert.equal(totals(s).total,3675);});
+test('Уменьшение / удаление позиции ограничивает списание',()=>{const s=fresh();add(s,'p2');add(s,'p3');s.bonus.percent=10;s.applied=1000;s.cart.pop();normalize(s);assert.equal(s.applied,450);s.cart=[];normalize(s);assert.equal(s.applied,0);});
+test('Недоступные и нулевые бонусы',()=>{const s=fresh();add(s,'p1');s.applied=500;s.bonus.online=false;normalize(s);assert.equal(s.applied,0);assert.ok(applyBonus(s,'1'));s.bonus.online=true;s.bonus.available=0;assert.equal(totals(s).max,0);});
+test('Обязательные поля / получатель / доставка',()=>{const s=fresh();add(s,'p1');assert.equal(Object.keys(checkout(s,form)).length,0);assert.ok(Object.keys(checkout(s,{})).length>=6);assert.ok(checkout(s,{...form,recipient:'other'}).recipientName);assert.ok(checkout(s,{...form,address:''}).address);s.delivery='pickup';assert.equal(Object.keys(checkout(s,{...form,address:''})).length,0);assert.ok(checkout(s,{...form,date:'2026-01-01'}).date);});
+test('Отказ оплаты не изменяет корзину / баланс / историю',()=>{const s=fresh();add(s,'p1');applyBonus(s,'500');const before=JSON.stringify(s);assert.equal(place(s,form,'error'),null);assert.equal(JSON.stringify(s),before);});
+test('Заказ фиксирует снимок цен и однократное списание',()=>{const s=fresh();add(s,'p1',400);applyBonus(s,'500');const o=place(s,form,'paid');assert.equal(o.total,6100);assert.equal(o.status,'Собирается');assert.equal(s.bonus.balance,750);assert.equal(s.bonus.available,500);assert.equal(s.cart.length,0);assert.throws(()=>place(s,form,'paid'));assert.equal(s.bonus.balance,750);});
+test('Без оплаты: локальный заказ и сохранённые детали',()=>{const s=fresh();add(s,'p2');s.delivery='pickup';const o=place(s,form,'unpaid');assert.equal(o.status,'Ожидает оплаты');assert.equal(o.paid,false);assert.equal(o.total,4500);assert.equal(o.items[0].id,'p2');});
+console.log(`\n${count} meaningful model checks passed.`);
